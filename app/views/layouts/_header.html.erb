@@ -7,20 +7,24 @@
                 <span class="icon-bar"></span>
                 <span class="icon-bar"></span>
             </a>
-             <a class="brand" href="/">One Month Rails</a>
+             
+             <!--Be Sure to leave the brand out there if you want it shown-->
+             <%= link_to "One Month Rails", root_path, class: "brand" %>
 
+            <!--Everything you want hidden at 940px or less, place within here-->
                 <div class="nav-collapse">
                     <ul class="nav">
-                        <li>
-                            <%= link_to 'Home',  root_path %>
-                        </li>
-                        <li>    
-                            <%= link_to 'About',  about_path %>
-                        </li>
+                        <li><%= link_to 'Home',  root_path %></li>
+                        <li><%= link_to 'About',  about_path %></li>
                     </ul>
-                    <ul class="nav pull-right">
-                                <li><%= link_to 'Login',  '#' %></li>
-                    </ul>
+                        <ul class="nav pull-right">
+                            <% if user_signed_in? %>
+                            <li><%= link_to 'Edit Profile', edit_user_registration_path %></li>
+                            <li><%= link_to 'Log Out', destroy_user_session_path, method: :delete %></li>
+                            <% else %>
+                            <li><%= link_to 'Login', new_user_session_path %></li>
+                            <% end %>
+                        </ul>
                 </div>
         </div>
     </div>
