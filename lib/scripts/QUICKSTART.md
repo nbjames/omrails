@@ -22,9 +22,17 @@ Save your exported Google Sheets CSV to:
 ```
 
 Your CSV should have these columns:
+
+**Option 1 - Full address in one column:**
+- `Organization - Name` (full street address like "123 Broadway")
+- `Organization - Zip Code` (can be empty)
+- `City` (will be filled in)
+- `State` (should already have "NY")
+
+**Option 2 - Separate street number and name:**
 - `Organization - Street Number` (or `Street Number`)
 - `Organization - Street` (or `Street`)
-- `Organization - Zip Code` (can be empty for 30% of addresses)
+- `Organization - Zip Code` (can be empty)
 - `City` (will be filled in)
 - `State` (should already have "NY")
 

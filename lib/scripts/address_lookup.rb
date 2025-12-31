@@ -21,12 +21,21 @@ class GoogleMapsAddressLookup
     @api_key = api_key
   end
 
-  def lookup_address(house_number, street, zip_code = nil)
-    return nil if house_number.nil? || house_number.to_s.strip.empty?
-    return nil if street.nil? || street.to_s.strip.empty?
+  def lookup_address(full_address = nil, house_number = nil, street = nil, zip_code = nil)
+    # Support both full address string or separate components
+    if full_address && !full_address.to_s.strip.empty?
+      # Use the full address provided
+      street_address = full_address.to_s.strip
+    elsif house_number && street
+      # Build from separate components
+      return nil if house_number.to_s.strip.empty? || street.to_s.strip.empty?
+      street_address = "#{house_number.to_s.strip} #{street.to_s.strip}"
+    else
+      return nil
+    end
 
     # Build the full address string for Google Maps
-    address_parts = ["#{house_number} #{street}"]
+    address_parts = [street_address]
 
     # Add zip code if available for more accurate results
     if zip_code && !zip_code.to_s.strip.empty?
@@ -181,14 +190,27 @@ class CSVAddressProcessor
   private
 
   def process_row(row)
-    # Get house number and street name - adjust these column names as needed
+    # Get address - check for combined address first, then separate components
+    full_address = row['Organization - Name'] || row['Address'] || row['Full Address']
     house_number = row['Organization - Street Number'] || row['Street Number'] || row['House Number']
     street = row['Organization - Street'] || row['Street'] || row['Street Name']
     zip_code = row['Organization - Zip Code'] || row['Zip Code'] || row['ZIP']
     city = row['City']
 
+    # Determine what address format we have
+    if full_address && !full_address.to_s.strip.empty?
+      address_display = full_address
+    elsif house_number && street
+      address_display = "#{house_number} #{street}"
+    else
+      puts "  ✗ Skipping: No address information found"
+      row['Manual Review'] = "NEEDS REVIEW: No address information in row"
+      @stats[:failed] += 1
+      return
+    end
+
     # Display current data
-    puts "  Address: #{house_number} #{street}"
+    puts "  Address: #{address_display}"
     puts "  Current ZIP: #{zip_code || '(none)'}"
     puts "  Current City: #{city || '(none)'}"
 
@@ -201,7 +223,7 @@ class CSVAddressProcessor
 
     # Lookup address
     puts "  Looking up address..."
-    result = @lookup.lookup_address(house_number, street, zip_code)
+    result = @lookup.lookup_address(full_address, house_number, street, zip_code)
 
     if result && result[:success]
       # Update city if needed

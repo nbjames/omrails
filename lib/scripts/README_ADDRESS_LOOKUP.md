@@ -44,14 +44,30 @@ source ~/.bashrc
 
 #### Expected CSV Columns
 
-The script looks for these column names (case-sensitive):
+The script supports two formats:
+
+**Format 1: Combined address in one column**
+- `Organization - Name` or `Address` or `Full Address` - The complete street address (e.g., "123 Broadway")
+- `Organization - Zip Code` or `Zip Code` or `ZIP` - Existing ZIP code (optional)
+- `City` - Will be populated with city name if empty
+- `State` - Should already be filled (not modified by script)
+
+**Example CSV structure (Format 1):**
+```csv
+Organization - Name,Organization - Zip Code,City,State
+123 Broadway,10012,,NY
+456 5th Avenue,,New York,NY
+789 Amsterdam Ave,10025,,NY
+```
+
+**Format 2: Separate street number and street name**
 - `Organization - Street Number` or `Street Number` or `House Number` - The house/building number
 - `Organization - Street` or `Street` or `Street Name` - The street name
 - `Organization - Zip Code` or `Zip Code` or `ZIP` - Existing ZIP code (optional)
 - `City` - Will be populated with city name if empty
 - `State` - Should already be filled (not modified by script)
 
-**Example CSV structure:**
+**Example CSV structure (Format 2):**
 ```csv
 Organization - Street Number,Organization - Street,Organization - Zip Code,City,State
 123,Broadway,10012,,NY
@@ -216,10 +232,13 @@ If your CSV has different column names, you can either:
 ## Column Name Flexibility
 
 The script automatically looks for common variations of column names:
-- House number: `Organization - Street Number`, `Street Number`, or `House Number`
-- Street: `Organization - Street`, `Street`, or `Street Name`
-- ZIP Code: `Organization - Zip Code`, `Zip Code`, or `ZIP`
-- City: `City`
+- **Full Address** (Format 1): `Organization - Name`, `Address`, or `Full Address`
+- **House number** (Format 2): `Organization - Street Number`, `Street Number`, or `House Number`
+- **Street** (Format 2): `Organization - Street`, `Street`, or `Street Name`
+- **ZIP Code**: `Organization - Zip Code`, `Zip Code`, or `ZIP`
+- **City**: `City`
+
+The script will automatically detect which format your CSV uses.
 
 ## NYC Borough Validation
 
