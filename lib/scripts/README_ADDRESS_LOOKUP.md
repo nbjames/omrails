@@ -1,42 +1,39 @@
 # NYC Address Lookup Script
 
-This script takes a CSV file with partial NYC addresses (house number and street name) and uses the NYC GeoClient API to find complete mailing addresses including city and zip code.
+This script takes a CSV file with partial NYC addresses (house number and street name) and uses the Google Maps Geocoding API to find complete mailing addresses including city and zip code.
 
 ## Prerequisites
 
-1. **NYC GeoClient API Credentials** (Free)
-   - Visit: https://developer.cityofnewyork.us/api/geoclient-api
-   - Create an account or log in
-   - Register a new application
-   - Check off access to the "Geoclient API"
-   - Note your `App ID` and `App Key`
+1. **Google Maps API Key**
+   - You can use your existing Google Maps API key
+   - The Geocoding API must be enabled for your project
 
 2. **Ruby** (already installed with Rails)
 
 ## Setup Instructions
 
-### Step 1: Get API Credentials
+### Step 1: Verify Your API Key
 
-1. Go to https://developer.cityofnewyork.us/api/geoclient-api
-2. Sign up or log in
-3. Click "Create New App" or manage existing app
-4. Enable "Geoclient API" access
-5. Copy your `App ID` and `App Key`
+Your API key needs to have the **Geocoding API** enabled. To verify:
 
-### Step 2: Set Environment Variables
+1. Go to: https://console.cloud.google.com/google/maps-apis
+2. Select your project
+3. Click "APIs & Services" > "Enabled APIs & services"
+4. Ensure "Geocoding API" is in the list
+5. If not, click "+ ENABLE APIS AND SERVICES" and search for "Geocoding API"
 
-Open your terminal and set your API credentials as environment variables:
+### Step 2: Set Environment Variable
+
+Set your Google Maps API key as an environment variable:
 
 ```bash
-export NYC_GEOCLIENT_APP_ID='your-app-id-here'
-export NYC_GEOCLIENT_APP_KEY='your-app-key-here'
+export GOOGLE_MAPS_API_KEY='AIzaSyAqIXutPBphGAW5yXv6zIsYJQAvijlorKQ'
 ```
 
-**Note:** These environment variables are only set for your current terminal session. To make them permanent, add them to your `~/.bashrc`, `~/.zshrc`, or `~/.bash_profile`:
+**Note:** This environment variable is only set for your current terminal session. To make it permanent, add it to your `~/.bashrc`, `~/.zshrc`, or `~/.bash_profile`:
 
 ```bash
-echo "export NYC_GEOCLIENT_APP_ID='your-app-id-here'" >> ~/.bashrc
-echo "export NYC_GEOCLIENT_APP_KEY='your-app-key-here'" >> ~/.bashrc
+echo "export GOOGLE_MAPS_API_KEY='AIzaSyAqIXutPBphGAW5yXv6zIsYJQAvijlorKQ'" >> ~/.bashrc
 source ~/.bashrc
 ```
 
@@ -106,9 +103,10 @@ ruby lib/scripts/address_lookup.rb data/addresses.csv data/addresses_updated.csv
 1. **Reads your CSV file** with partial address information
 2. **For each row:**
    - Takes the house number and street name
-   - Uses existing ZIP code if available (70% of your data)
-   - Calls NYC GeoClient API to lookup the address
-   - If no ZIP code is available, tries all NYC boroughs to find the address
+   - Uses existing ZIP code if available (70% of your data) for more accurate geocoding
+   - If no ZIP code is available, adds "New York, NY" to the search
+   - Calls Google Maps Geocoding API to lookup the address
+   - Verifies the result is actually in NYC (one of the 5 boroughs)
 3. **Updates the CSV:**
    - Adds city name to the `City` column (typically "New York")
    - Adds ZIP code to the `Organization - Zip Code` column if missing
@@ -142,7 +140,7 @@ Processing row 3 of 10...
   Current ZIP: (none)
   Current City: (none)
   Looking up address...
-  ✗ Failed: Address not found in any NYC borough
+  ✗ Failed: Address not found
   → Marked for manual review
 
 ============================================================
@@ -162,36 +160,58 @@ Check the 'Manual Review' column in the output file.
 
 ## Troubleshooting
 
-### "Missing API credentials" error
-- Make sure you've set the environment variables:
+### "Missing API key" error
+- Make sure you've set the environment variable:
   ```bash
-  export NYC_GEOCLIENT_APP_ID='your-app-id'
-  export NYC_GEOCLIENT_APP_KEY='your-app-key'
+  export GOOGLE_MAPS_API_KEY='your-api-key'
   ```
-- Verify they're set with: `echo $NYC_GEOCLIENT_APP_ID`
+- Verify it's set with: `echo $GOOGLE_MAPS_API_KEY`
 
 ### "Address not found" errors
 - Verify the house number and street name are correct
 - Check for typos in the original data
-- Some addresses may not exist in NYC's database
+- Some addresses may not exist or may be too new for Google's database
 - Addresses marked for manual review will need to be verified manually
 
+### API Errors or "REQUEST_DENIED"
+- **Most Common**: If you see "API keys with referer restrictions cannot be used with this API":
+  - Your API key has HTTP referer restrictions (common for web apps)
+  - You need to either:
+    1. Create a new API key without restrictions for server-side use, OR
+    2. Remove referer restrictions from your existing key (in Google Cloud Console > Credentials)
+- Ensure the Geocoding API is enabled in your Google Cloud Console
+- Check that your API key is valid and hasn't expired
+- Verify billing is set up (Google requires billing info even for free tier)
+- Check your API usage limits in the Google Cloud Console
+
 ### API Rate Limits
-- The free NYC GeoClient API has rate limits
-- If you have a very large CSV (1000+ addresses), you may need to:
+- Google Maps free tier includes:
+  - $200 monthly credit (approximately 40,000 geocoding requests)
+  - Rate limit: 50 requests per second
+- The script includes a 0.1 second delay between requests to be safe
+- If you exceed limits, you may need to:
   - Process in batches
-  - Add delays between requests (script can be modified)
-  - Contact NYC for higher rate limits
+  - Upgrade your Google Cloud billing plan
+  - Monitor usage at: https://console.cloud.google.com/google/maps-apis
 
 ### Wrong Column Names
 If your CSV has different column names, you can either:
 1. Rename your columns in Google Sheets before exporting, OR
-2. Edit the script at line 135-137 to match your column names:
+2. Edit the script at line 185-187 to match your column names:
    ```ruby
    house_number = row['Your Column Name Here']
    street = row['Your Other Column Name']
    zip_code = row['Your ZIP Column']
    ```
+
+### "Address found but not in New York City"
+- The script validates that results are actually in NYC (5 boroughs)
+- If you get this error, the address might be in:
+  - Upstate New York
+  - New Jersey
+  - Connecticut
+  - Another location with a similar street name
+- Review these addresses manually to ensure they're correct
 
 ## Column Name Flexibility
 
@@ -200,6 +220,17 @@ The script automatically looks for common variations of column names:
 - Street: `Organization - Street`, `Street`, or `Street Name`
 - ZIP Code: `Organization - Zip Code`, `Zip Code`, or `ZIP`
 - City: `City`
+
+## NYC Borough Validation
+
+The script verifies addresses are in one of NYC's 5 boroughs:
+- **Manhattan** (New York County)
+- **Brooklyn** (Kings County)
+- **Queens** (Queens County)
+- **Bronx** (Bronx County)
+- **Staten Island** (Richmond County)
+
+Addresses outside these areas will be marked for manual review.
 
 ## After Running the Script
 
@@ -210,14 +241,28 @@ The script automatically looks for common variations of column names:
 
 ## API Documentation
 
-For more information about the NYC GeoClient API:
-- Official Documentation: https://maps.nyc.gov/geoclient/v1/doc
-- Developer Portal: https://developer.cityofnewyork.us/api/geoclient-api
+For more information about the Google Maps Geocoding API:
+- Official Documentation: https://developers.google.com/maps/documentation/geocoding
+- API Console: https://console.cloud.google.com/google/maps-apis
+- Pricing: https://developers.google.com/maps/documentation/geocoding/usage-and-billing
+
+## Cost Estimation
+
+With your API key, geocoding costs:
+- **First $200/month**: FREE (included credit)
+- **After $200**: $5.00 per 1,000 requests
+
+Example: If you have 500 addresses to geocode:
+- Cost: $0.00 (well within free tier)
+
+If you have 50,000 addresses:
+- Cost: ~$12.50 (after free tier credit)
 
 ## Support
 
 If you encounter issues:
 1. Check that your CSV columns match the expected names
-2. Verify your API credentials are correct
+2. Verify your API key is correct and Geocoding API is enabled
 3. Ensure the addresses are actually in NYC
 4. Check the "Manual Review" column for specific error messages
+5. Monitor API usage in Google Cloud Console

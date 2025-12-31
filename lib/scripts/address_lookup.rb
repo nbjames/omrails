@@ -1,9 +1,9 @@
 #!/usr/bin/env ruby
 #
-# NYC Address Lookup Script
+# NYC Address Lookup Script using Google Maps Geocoding API
 #
 # This script takes a CSV file with partial NYC addresses (house number and street name)
-# and uses the NYC GeoClient API to find complete mailing addresses including city and zip code.
+# and uses the Google Maps Geocoding API to find complete mailing addresses including city and zip code.
 #
 # Usage:
 #   ruby lib/scripts/address_lookup.rb input.csv output.csv
@@ -14,65 +14,43 @@ require 'net/http'
 require 'json'
 require 'uri'
 
-class NYCAddressLookup
-  API_BASE_URL = 'https://api.nyc.gov/geo/geoclient/v1'
+class GoogleMapsAddressLookup
+  API_BASE_URL = 'https://maps.googleapis.com/maps/api/geocode/json'
 
-  # NYC boroughs for lookup
-  BOROUGHS = ['Manhattan', 'Bronx', 'Brooklyn', 'Queens', 'Staten Island']
-
-  def initialize(app_id, app_key)
-    @app_id = app_id
-    @app_key = app_key
+  def initialize(api_key)
+    @api_key = api_key
   end
 
-  def lookup_address(house_number, street, zip_code = nil, borough = nil)
+  def lookup_address(house_number, street, zip_code = nil)
     return nil if house_number.nil? || house_number.to_s.strip.empty?
     return nil if street.nil? || street.to_s.strip.empty?
 
-    # Build API request parameters
-    params = {
-      'houseNumber' => house_number.to_s.strip,
-      'street' => street.to_s.strip,
-      'app_id' => @app_id,
-      'app_key' => @app_key
-    }
+    # Build the full address string for Google Maps
+    address_parts = ["#{house_number} #{street}"]
 
-    # Add zip or borough (prefer zip if available)
+    # Add zip code if available for more accurate results
     if zip_code && !zip_code.to_s.strip.empty?
-      params['zip'] = zip_code.to_s.strip
-    elsif borough && !borough.to_s.strip.empty?
-      params['borough'] = borough
+      address_parts << zip_code
     else
-      # If no zip or borough provided, try each NYC borough
-      return try_all_boroughs(house_number, street)
+      # Specify New York, NY to limit search to NYC
+      address_parts << "New York, NY"
     end
 
-    make_request(params)
+    address = address_parts.join(', ')
+
+    make_request(address)
   end
 
   private
 
-  def try_all_boroughs(house_number, street)
-    # Try each borough until we get a valid response
-    BOROUGHS.each do |borough|
-      params = {
-        'houseNumber' => house_number.to_s.strip,
-        'street' => street.to_s.strip,
-        'borough' => borough,
-        'app_id' => @app_id,
-        'app_key' => @app_key
-      }
+  def make_request(address)
+    # Build API request
+    params = {
+      'address' => address,
+      'key' => @api_key
+    }
 
-      result = make_request(params)
-      return result if result && result[:success]
-    end
-
-    # No borough matched
-    { success: false, error: 'Address not found in any NYC borough' }
-  end
-
-  def make_request(params)
-    uri = URI("#{API_BASE_URL}/address.json")
+    uri = URI(API_BASE_URL)
     uri.query = URI.encode_www_form(params)
 
     begin
@@ -81,35 +59,81 @@ class NYCAddressLookup
       if response.code == '200'
         data = JSON.parse(response.body)
 
-        if data['address']
-          # Extract relevant information
-          address_data = data['address']
+        if data['status'] == 'OK' && data['results'] && data['results'].size > 0
+          result = data['results'][0]
+
+          # Extract address components
+          components = extract_address_components(result['address_components'])
+
+          # Verify this is actually in New York City
+          unless is_nyc_address?(components)
+            return { success: false, error: 'Address found but not in New York City' }
+          end
+
           {
             success: true,
-            city: address_data['cityStateZipCode']&.split(',')&.first&.strip || 'New York',
-            zip_code: address_data['zipCode'] || address_data['zip5'],
-            borough: address_data['borough'],
-            full_address: "#{address_data['houseNumber']} #{address_data['firstStreetNameNormalized']}",
-            bbl: address_data['bbl'],
-            bin: address_data['buildingIdentificationNumber']
+            city: components[:city] || 'New York',
+            zip_code: components[:zip_code],
+            state: components[:state] || 'NY',
+            county: components[:county],
+            formatted_address: result['formatted_address'],
+            location: result['geometry']['location']
           }
+        elsif data['status'] == 'ZERO_RESULTS'
+          { success: false, error: 'Address not found' }
         else
-          { success: false, error: data['message'] || 'Address not found' }
+          { success: false, error: "API Error: #{data['status']} - #{data['error_message']}" }
         end
       else
-        { success: false, error: "API Error: #{response.code} - #{response.message}" }
+        { success: false, error: "HTTP Error: #{response.code} - #{response.message}" }
       end
     rescue StandardError => e
       { success: false, error: "Request failed: #{e.message}" }
     end
   end
+
+  def extract_address_components(components)
+    result = {}
+
+    components.each do |component|
+      types = component['types']
+
+      if types.include?('locality')
+        result[:city] = component['long_name']
+      elsif types.include?('postal_code')
+        result[:zip_code] = component['long_name']
+      elsif types.include?('administrative_area_level_1')
+        result[:state] = component['short_name']
+      elsif types.include?('administrative_area_level_2')
+        result[:county] = component['long_name']
+      end
+    end
+
+    result
+  end
+
+  def is_nyc_address?(components)
+    # Check if the address is in one of NYC's 5 boroughs (counties)
+    nyc_counties = ['New York County', 'Kings County', 'Queens County', 'Bronx County', 'Richmond County']
+
+    return true if components[:county] && nyc_counties.include?(components[:county])
+
+    # Also check if state is NY and city is New York (covers most cases)
+    return true if components[:state] == 'NY' && components[:city] == 'New York'
+
+    # For outer boroughs that might have different city names
+    nyc_cities = ['New York', 'Brooklyn', 'Bronx', 'Queens', 'Staten Island']
+    return true if components[:state] == 'NY' && nyc_cities.include?(components[:city])
+
+    false
+  end
 end
 
 class CSVAddressProcessor
-  def initialize(input_file, output_file, app_id, app_key)
+  def initialize(input_file, output_file, api_key)
     @input_file = input_file
     @output_file = output_file
-    @lookup = NYCAddressLookup.new(app_id, app_key)
+    @lookup = GoogleMapsAddressLookup.new(api_key)
     @stats = {
       total: 0,
       updated: 0,
@@ -138,6 +162,9 @@ class CSVAddressProcessor
       puts "\nProcessing row #{index + 1} of #{csv_data.size}..."
 
       process_row(row)
+
+      # Add a small delay to avoid hitting API rate limits
+      sleep(0.1) if index < csv_data.size - 1
     end
 
     # Write updated CSV
@@ -230,30 +257,27 @@ if __FILE__ == $0
   # Check command line arguments
   if ARGV.size < 2
     puts "Usage: ruby #{$0} input.csv output.csv"
-    puts "\nEnvironment variables required:"
-    puts "  NYC_GEOCLIENT_APP_ID  - Your NYC GeoClient App ID"
-    puts "  NYC_GEOCLIENT_APP_KEY - Your NYC GeoClient App Key"
-    puts "\nGet your API credentials at: https://developer.cityofnewyork.us/api/geoclient-api"
+    puts "\nEnvironment variable required:"
+    puts "  GOOGLE_MAPS_API_KEY - Your Google Maps API Key"
+    puts "\nGet your API key at: https://console.cloud.google.com/google/maps-apis"
     exit 1
   end
 
   input_file = ARGV[0]
   output_file = ARGV[1]
 
-  # Get API credentials from environment variables
-  app_id = ENV['NYC_GEOCLIENT_APP_ID']
-  app_key = ENV['NYC_GEOCLIENT_APP_KEY']
+  # Get API key from environment variable
+  api_key = ENV['GOOGLE_MAPS_API_KEY']
 
-  unless app_id && app_key
-    puts "Error: Missing API credentials"
-    puts "\nPlease set the following environment variables:"
-    puts "  export NYC_GEOCLIENT_APP_ID='your-app-id'"
-    puts "  export NYC_GEOCLIENT_APP_KEY='your-app-key'"
-    puts "\nGet your API credentials at: https://developer.cityofnewyork.us/api/geoclient-api"
+  unless api_key
+    puts "Error: Missing API key"
+    puts "\nPlease set the following environment variable:"
+    puts "  export GOOGLE_MAPS_API_KEY='your-api-key'"
+    puts "\nGet your API key at: https://console.cloud.google.com/google/maps-apis"
     exit 1
   end
 
   # Process the CSV
-  processor = CSVAddressProcessor.new(input_file, output_file, app_id, app_key)
+  processor = CSVAddressProcessor.new(input_file, output_file, api_key)
   processor.process
 end
